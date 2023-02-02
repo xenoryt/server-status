@@ -2,22 +2,19 @@
 import { ref, watch } from 'vue'
 import LinkDisplay from './components/LinkDisplay.vue'
 import FileSelector from './components/FileSelector.vue'
+import StreamList from './components/StreamList.vue'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import 'element-plus/dist/index.css'
 
+const streamList = ref(null)
+
 const fileSelect = ref('')
 const filterText = ref('')
 const enableSubs = ref(false)
-const streamUrl = ref("https://rtmp.skywardbox.net/hls/test")
+const streamUrl = ref("https://rtmp.skywardbox.net/hls/stream.m3u8")
 
 const isStreaming = ref(false)
-
-const checkStreaming = async () => {
-  let r = await axios.get('/stream-active')
-  isStreaming.value = r.data.data
-}
-checkStreaming()
 
 const StartStream = async () => {
   console.log('Selected file', fileSelect.value)
@@ -37,7 +34,7 @@ const StartStream = async () => {
     })
   }
 
-  checkStreaming()
+  streamList.value.update()
 }
 
 const StopStream = async () => {
@@ -52,7 +49,7 @@ const StopStream = async () => {
     })
   }
 
-  checkStreaming()
+  streamList.value.update()
 }
 
 watch(() => fileSelect.value, async () => {
@@ -68,32 +65,37 @@ watch(() => fileSelect.value, async () => {
   <main class="main">
     <Suspense>
     <el-container>
-      <el-header><h1>Stream File</h1></el-header>
-      <el-main>
-        <el-form label-width="120px" @submit.prevent>
+      <el-aside width="250px">
+        <StreamList ref="streamList"/>
+      </el-aside>
+      <el-container>
+        <el-header><h1>Stream File</h1></el-header>
+        <el-main>
+          <el-form label-width="120px" @submit.prevent>
 
-          <el-form-item label="Filter File">
-            <el-input v-model="filterText" placeholder="pattern" />
-          </el-form-item>
-          <el-form-item label="Select File">
-            <FileSelector :search="filterText" v-model="fileSelect" />
-          </el-form-item>
+            <el-form-item label="Filter File">
+              <el-input v-model="filterText" placeholder="pattern" />
+            </el-form-item>
+            <el-form-item label="Select File">
+              <FileSelector :search="filterText" v-model="fileSelect" />
+            </el-form-item>
 
-          <el-form-item label="Add Subs">
-            <el-switch v-model="enableSubs"/>
-          </el-form-item>
-          <el-form-item label="Controls">
-            <div class="row">
-              <el-button type="primary" @click="StartStream" :disabled="fileSelect == ''">Start stream</el-button>
-              <el-button type="danger" @click="StopStream" :disabled="!isStreaming">Stop stream</el-button>
-            </div>
-          </el-form-item>
-          <el-form-item label="Stream Link">
-            <LinkDisplay :link="streamUrl"/>
-          </el-form-item>
+            <el-form-item label="Add Subs">
+              <el-switch v-model="enableSubs"/>
+            </el-form-item>
+            <el-form-item label="Controls">
+              <div class="row">
+                <el-button type="primary" @click="StartStream" :disabled="fileSelect == ''">Start stream</el-button>
+                <el-button type="danger" @click="StopStream" :disabled="!isStreaming">Stop stream</el-button>
+              </div>
+            </el-form-item>
+            <el-form-item label="Stream Link">
+              <LinkDisplay :link="streamUrl"/>
+            </el-form-item>
 
-        </el-form>
-      </el-main>
+          </el-form>
+        </el-main>
+      </el-container>
     </el-container>
 
     <template #fallback>
@@ -105,7 +107,7 @@ watch(() => fileSelect.value, async () => {
 
 <style scoped lang=scss>
 main.main {
-  max-width: 1024px;
+  max-width: 1200px;
   margin: auto;
 }
 

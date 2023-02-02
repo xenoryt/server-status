@@ -5,14 +5,38 @@ import (
 	"os"
 	"os/exec"
 	"path"
-	"sync"
 )
 
 var ErrStreamExists = fmt.Errorf("Another stream is already running")
 
-var streamCmd *exec.Cmd
-var streamLock sync.Mutex
-var streaming bool
+type Stream struct {
+	Cmd  *exec.Cmd `json:"-"`
+	Done bool      `json:"done"`
+
+	Filepath   string `json:"filepath"`
+	OutputPath string `json:"outputPath"`
+
+	Url string `json:"url"`
+}
+
+func (s Stream) Status() string {
+	if s.Done {
+		return "done"
+	} else if s.Cmd == nil {
+		return "cancelled"
+	}
+	return "active"
+}
+
+func (s Stream) String() string {
+	return fmt.Sprintf("'...%s' - %s", s.Filepath[len(s.Filepath)-10:], s.Status())
+}
+
+var streams []*Stream
+
+func LoadStreams(s []*Stream) {
+	streams = s
+}
 
 func streamCommand(outputFilepath, filepath string, subs bool) []string {
 	subsOpts := []string{
@@ -32,20 +56,12 @@ func streamCommand(outputFilepath, filepath string, subs bool) []string {
 	return command
 }
 
-// Streaming returns true iff there is an active stream.
-func Streaming() bool {
-	return streaming
-}
-
 // StreamFile streams a media file to a url.
 // If subs is true, will add hard subs to the stream.
 func StreamFile(outputFilepath, filepath string, subs bool) error {
-	if !streamLock.TryLock() {
-		return ErrStreamExists
-	}
-	defer streamLock.Unlock()
+	s := GetStream(filepath)
 
-	if streaming {
+	if s != nil && !s.Done {
 		return ErrStreamExists
 	}
 
@@ -54,29 +70,46 @@ func StreamFile(outputFilepath, filepath string, subs bool) error {
 	}
 
 	command := streamCommand(outputFilepath, filepath, subs)
-	streamCmd = exec.Command(command[0], command[1:]...)
+	streamCmd := exec.Command(command[0], command[1:]...)
 	streamCmd.Stdout = os.Stdout
 	streamCmd.Stderr = os.Stderr
 	err := streamCmd.Start()
 	if err != nil {
 		return err
 	}
+	stream := Stream{
+		Cmd:        streamCmd,
+		Filepath:   filepath,
+		OutputPath: outputFilepath,
+	}
+	streams = append(streams, &stream)
 
-	streaming = true
 	go func() {
-		streamCmd.Wait()
-		streamLock.Lock()
-		streaming = false
-		streamLock.Unlock()
+		stream.Cmd.Wait()
+		stream.Done = true
 	}()
 
 	return nil
 }
 
 // StopStream stops any ongoing streams.
-func StopStream() error {
-	if streamCmd == nil {
+func StopStream(filepath string) error {
+	s := GetStream(filepath)
+	if s == nil {
 		return nil
 	}
-	return streamCmd.Process.Kill()
+	return s.Cmd.Process.Kill()
+}
+
+func GetStream(filepath string) *Stream {
+	for _, s := range streams {
+		if s.Filepath == filepath {
+			return s
+		}
+	}
+	return nil
+}
+
+func ListStreams() []*Stream {
+	return streams
 }

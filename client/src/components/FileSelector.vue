@@ -4,7 +4,7 @@ import { ElMessage } from 'element-plus'
 import axios from 'axios'
 
 const props = defineProps<{
-  search: String
+  search: string
   modelValue: string
 }>()
 

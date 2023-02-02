@@ -17,6 +17,11 @@ import (
 	"golang.org/x/xerrors"
 )
 
+type StreamRequest struct {
+	Path string `json:"path"`
+	Subs bool   `json:"subs"`
+}
+
 func StartServer() {
 	fSys, err := fs.Sub(client, "client/dist")
 	if err != nil {
@@ -26,7 +31,7 @@ func StartServer() {
 
 	http.HandleFunc("/files/", HandleFilesRequest)
 	http.HandleFunc("/stream", HandleStreamRequest)
-	http.HandleFunc("/stream-active", HandleStreamStatusRequest)
+	http.HandleFunc("/streams", HandleStreamsListRequest)
 	http.HandleFunc("/stream-url", HandleStreamUrlRequest)
 
 	logger.Println("Starting server on port 8080...")
@@ -52,22 +57,41 @@ func HandleStreamUrlRequest(w http.ResponseWriter, r *http.Request) {
 	WriteResponse(w, url, nil)
 }
 
-func HandleStreamStatusRequest(w http.ResponseWriter, r *http.Request) {
-	WriteResponse(w, stream.Streaming(), nil)
+// HandleStreamsListRequest handles requests for old streams
+func HandleStreamsListRequest(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		// If filepath is specified, return single stream.
+		// Else return all streams
+		if filepath := r.URL.Query().Get("path"); filepath != "" {
+			s := stream.GetStream(filepath)
+			if s == nil {
+				WriteResponse(w, false, nil)
+			}
+			WriteResponse(w, !s.Done, nil)
+		} else {
+			streams := stream.ListStreams()
+			streamResponse := make([]map[string]any, len(streams))
+			for i, s := range streams {
+				streamResponse[i] = map[string]any{
+					"url":    fmt.Sprintf("%s/%s", HLSStaticURL, toStreamPath(s.Filepath)),
+					"stream": s,
+				}
+			}
+			WriteResponse(w, streamResponse, nil)
+		}
+	default:
+		WriteInvalidRequest(w, fmt.Errorf("Method is not supported"))
+	}
 }
 
-type StreamRequest struct {
-	Path string `json:"path"`
-	Subs bool   `json:"subs"`
-
-	Name string `json:"name"`
-}
-
+// HandleStreamRequest handles requests for new stream
 func HandleStreamRequest(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodDelete:
-		log.Println("Stopping stream...")
-		WriteResponse(w, nil, stream.StopStream())
+		filepath := r.URL.Query().Get("path")
+		log.Printf("Stopping stream: %s\n", filepath)
+		WriteResponse(w, nil, stream.StopStream(filepath))
 	case http.MethodPost:
 		var request StreamRequest
 		d := json.NewDecoder(r.Body)
@@ -76,7 +100,6 @@ func HandleStreamRequest(w http.ResponseWriter, r *http.Request) {
 			WriteInvalidRequest(w, err)
 			return
 		}
-
 		filepath := path.Join(*mediaDir, request.Path)
 		log.Println("Starting stream on file:", filepath)
 		WriteResponse(w, nil, stream.StreamFile(path.Join(*streamOutDir, toStreamPath(request.Path)), filepath, request.Subs))
